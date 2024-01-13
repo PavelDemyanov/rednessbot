@@ -29,6 +29,8 @@
 
 ![Пример наложенного видео](https://github.com/GreypaX/rednessbot/assets/59764924/cd123f7f-281c-48e1-9e50-32cac0102e6f)
 
+**Получаемый файл с примером в динамике:**
+
 ![dark20240109_231823 2](https://github.com/GreypaX/rednessbot/assets/59764924/ce9b20ec-840b-4a7d-bf49-7f767e2f8086)
 
 смотреть пример наложения телеметрии [на youtube](https://youtu.be/-AFmMTA96d0)
