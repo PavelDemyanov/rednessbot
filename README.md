@@ -1,4 +1,4 @@
-# RednessBot
+# RednessBot (alpha v0.3)
 
 ## Описание
 
