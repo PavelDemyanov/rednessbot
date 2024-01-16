@@ -4,6 +4,16 @@ import matplotlib.pyplot as plt
 from moviepy.editor import ColorClip, TextClip, CompositeVideoClip, concatenate_videoclips, VideoFileClip, ImageClip
 import datetime
 import gc
+import psutil  # гребаная память кудато утекает и всё крашится, сделаем проверку памяти
+
+def check_memory():
+    memory = psutil.virtual_memory()
+    available_memory = int(memory.available / (1024 * 1024))  # В мегабайтах, округлено до целого числа
+    print(f"Доступная память: {available_memory} MB")
+    if available_memory < 8 * 1024:  # Порог в 8 ГБ
+        print("Предупреждение: низкий уровень доступной памяти!")
+        return False
+    return True
 
 # Функция для преобразования строки даты в объект datetime
 def parse_date(date_str):
@@ -26,9 +36,35 @@ def get_pwm_color(pwm):
         return 'white'
 
 def create_speed_video(csv_file, output_path):
+    total_processed = 0  # для инициализации счетчика обработанных записей
     # Чтение данных из файла
-    data = pd.read_csv(csv_file)
-    data['Date'] = data['Date'].apply(parse_date)
+    data = pd.read_csv(csv_file, nrows=0)  # Сначала читаем только заголовки
+
+    # Определение типа файла по названиям колонок
+    if 'Date' in data.columns and 'Speed' in data.columns:
+        file_type = 1
+    elif 'date' in data.columns and 'time' in data.columns:
+        file_type = 2
+    else:
+        raise ValueError("Неверный формат файла")
+
+    # Полное чтение файла в зависимости от типа
+    if file_type == 1:
+        data = pd.read_csv(csv_file)
+        data['Date'] = data['Date'].apply(parse_date)
+    elif file_type == 2:
+        # Чтение файла с разделением даты и времени и последующее объединение
+        data = pd.read_csv(csv_file)
+        data['Date'] = pd.to_datetime(data['date'] + ' ' + data['time'])
+        # Переименовываем остальные колонки, чтобы соответствовали типу 1
+        data.rename(columns={'speed': 'Speed', 'pwm': 'PWM', 'voltage': 'Voltage',
+                             'power': 'Power', 'battery_level': 'Battery level',
+                             'temp2': 'Temperature', 'totaldistance': 'Total mileage',
+                             'gps_speed': 'GPS Speed'}, inplace=True)
+        
+        # Преобразование пробега из метров в километры для файла типа 2
+        data['Total mileage'] = data['Total mileage'] / 1000
+
     data['Duration'] = data['Date'].diff().dt.total_seconds().fillna(0)
 
     # Установка начального значения пробега
@@ -42,6 +78,10 @@ def create_speed_video(csv_file, output_path):
     for start in range(0, len(data), chunk_size):
         end = min(start + chunk_size, len(data))
         chunk_data = data[start:end]
+
+        if not check_memory():
+            print(f"Прерывание обработки на чанке {start}, недостаточно памяти.")
+            break       
         
         # Создание видеоклипов для текущей части
         clips = []
@@ -84,7 +124,9 @@ def create_speed_video(csv_file, output_path):
             y_start = (576 - total_height) // 2 + 30  # Начальная позиция по Y для центрирования + отступ от верха
 
             for param_name, param_value, unit in parameters:
-                print(f"Creating TextClip for: {param_name} {param_value} {unit}")
+
+                #ЕСЛИ КРАШИТСЯ ПРОГРАММА ВКЛЮЧИ ЭТОТ ЛОГ
+                #print(f"Creating TextClip for: {param_name} {param_value} {unit}")
 
                 if param_name == "GPS" and param_value == "":
                     continue  # Пропускаем создание клипов для пустого значения
@@ -115,9 +157,10 @@ def create_speed_video(csv_file, output_path):
                 value_clip = value_clip.set_position((x_position + name_clip.size[0] + 20, value_y)).set_duration(row['Duration'])
                 unit_clip = unit_clip.set_position((x_position + name_clip.size[0] + value_clip.size[0] + 40, unit_y)).set_duration(row['Duration'])
 
-                print(f"Created TextClip for {param_name}. Size: {name_clip.size}")
-                print(f"Created TextClip for {param_value}. Size: {value_clip.size}")
-                print(f"Created TextClip for {unit}. Size: {unit_clip.size}")
+                # ЕСЛИ ПРОГРАММА КРАШИТСЯ СНИМИ ЭТИ КОММЕНТАРИИ будет видно почему крашится
+                #print(f"Created TextClip for {param_name}. Size: {name_clip.size}")
+                #print(f"Created TextClip for {param_value}. Size: {value_clip.size}")
+                #print(f"Created TextClip for {unit}. Size: {unit_clip.size}")
 
                 # Добавляем клипы в список
                 text_clips.extend([name_clip, value_clip, unit_clip])
@@ -137,8 +180,9 @@ def create_speed_video(csv_file, output_path):
             video_clip = CompositeVideoClip([background_clip] + text_clips + [speed_value_clip, speed_unit_clip, graph_clip])
             clips.append(video_clip)
 
-            if index % 100 == 0:
-                print(f"Обработано {index + start}/{len(data)} записей...")
+            total_processed += 1
+            if total_processed % 100 == 0:
+                print(f"Обработано {total_processed}/{len(data)} записей...")
 
         # Сохранение временного видеофайла для текущей части
         temp_output_path = f"{output_path}_part_{start//chunk_size}.mp4"
@@ -148,16 +192,22 @@ def create_speed_video(csv_file, output_path):
         # Очистка памяти после обработки и сохранения каждого чанка
         gc.collect()
 
-    # Объединение всех временных видеофайлов в один финальный
+
+    # Объединение всех временных видеофайлов в один финальный с проверкой гребаной памяти!
     final_clips = [VideoFileClip(file) for file in temp_video_files]
-    final_clip = concatenate_videoclips(final_clips, method="compose")
-    final_clip.write_videofile(output_path, fps=5, bitrate="20000k")
-    print(f"Финальное видео сохранено в {output_path}")
+
+    if check_memory():
+        final_clip = concatenate_videoclips(final_clips, method="compose")
+        final_clip.write_videofile(output_path, fps=5, bitrate="20000k")
+        print(f"Финальное видео сохранено в {output_path}")
+    else:
+        print("Прерывание создания финального видео, недостаточно памяти.")
 
     # Удаление временных видеофайлов
     for file in temp_video_files:
         os.remove(file)
         print(f"Временный файл {file} удален.")
+
 
 
 def create_graph(data, current_time, duration):
@@ -217,8 +267,14 @@ def create_graph(data, current_time, duration):
 
 
 if __name__ == "__main__":
-    print("Эта программа создаёт видео телеметрии (в 4K разрешении) из данных CSV файла программы darknessbot.")
-    csv_file = input("Пожалуйста, введите путь к вашему CSV файлу: ")
+    print("Эта программа создаёт видео телеметрии (в 4K разрешении) из данных CSV файла программы darknessbot и WheelLog.")
+
+    csv_file = ""
+    while not csv_file.strip():
+        csv_file = input("Пожалуйста, введите путь к вашему CSV файлу: ")
+        if not csv_file.strip():
+            print("Вы забыли указать путь к CSV файлу. Пожалуйста, попробуйте снова.")
+
     output_path = input("Введите директорию для сохранения видео (можете не вводить ничего, видео сохранится в директирию к csv файлу): ").strip()
 
     # Если директория для сохранения не указана, формируем имя файла в текущей директории CSV файла
