@@ -36,6 +36,11 @@ def get_pwm_color(pwm):
         return 'white'
 
 def create_speed_video(csv_file, output_path):
+
+    # Определение путей к шрифтам
+    font_regular_path = os.path.join(os.path.dirname(__file__), 'fonts', 'sf-ui-display-regular.otf')
+    font_bold_path = os.path.join(os.path.dirname(__file__), 'fonts', 'sf-ui-display-bold.otf')
+    
     total_processed = 0  # для инициализации счетчика обработанных записей
     # Чтение данных из файла
     data = pd.read_csv(csv_file, nrows=0)  # Сначала читаем только заголовки
@@ -137,9 +142,9 @@ def create_speed_video(csv_file, output_path):
                     text_color = get_pwm_color(param_value)    
 
                 # Создаем отдельные клипы для каждой части параметра
-                name_clip = TextClip(param_name, fontsize=70 , color='white', font='SF-UI-Display')
-                value_clip = TextClip(str(param_value), fontsize=85 , color=text_color, font='SF-UI-Display-Bold')  # применение цвета только здесь
-                unit_clip = TextClip(unit, fontsize=70 , color='white', font='SF-UI-Display')
+                name_clip = TextClip(param_name, fontsize=70 , color='white', font=font_regular_path)
+                value_clip = TextClip(str(param_value), fontsize=85 , color=text_color, font=font_bold_path)  # применение цвета только здесь
+                unit_clip = TextClip(unit, fontsize=70 , color='white', font=font_regular_path)
 
                 # Рассчитываем x_position
                 x_position = 3840 - name_clip.size[0] - value_clip.size[0] - unit_clip.size[0] - 100 #отступ вторичных показателей от правого края экрана
@@ -169,11 +174,11 @@ def create_speed_video(csv_file, output_path):
                 y_start += max_height  # Используем max_height для учета выравнивания по нижнему краю
 
             # Создаем текстовый клип для значения скорости (TextClip1)
-            speed_value_clip = TextClip(f"{int(row['Speed'])}", fontsize=210, color=speed_color, font='SF-UI-Display-Bold')
+            speed_value_clip = TextClip(f"{int(row['Speed'])}", fontsize=210, color=speed_color, font=font_bold_path)
             speed_value_clip = speed_value_clip.set_position(lambda t: ('center', 2160 - speed_value_clip.size[1] - 100)).set_duration(row['Duration'])
 
             # Создаем текстовый клип для единиц измерения скорости (TextClip2)
-            speed_unit_clip = TextClip("км/ч", fontsize=60, color='white', font='SF-UI-Display')
+            speed_unit_clip = TextClip("км/ч", fontsize=60, color='white', font=font_regular_path)
             speed_unit_clip = speed_unit_clip.set_position(lambda t: ((3840 - speed_unit_clip.size[0]) / 2, speed_value_clip.pos(t)[1] + speed_value_clip.size[1] + -25)).set_duration(row['Duration']) # отступ от нижнего края для скорости КРУПНЫЙ
 
             # Объединяем фоновый клип с текстовыми клипами и центральным текстовым клипом
