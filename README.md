@@ -1,4 +1,4 @@
-# RednessBot (v0.9)
+# RednessBot (v0.95)
 
 ## Описание
 
