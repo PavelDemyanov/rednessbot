@@ -5,6 +5,30 @@ from moviepy.editor import ColorClip, TextClip, CompositeVideoClip, concatenate_
 import datetime
 import gc
 import psutil  # гребаная память кудато утекает и всё крашится, сделаем проверку памяти
+import subprocess
+import shutil
+import platform
+
+def create_or_clean_hidden_folder():
+    # Определение пути к скрытой папке в той же директории, что и скрипт
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    hidden_folder_path = os.path.join(script_dir, '.redness_temp_files')
+
+    # Проверяем, существует ли папка
+    if os.path.exists(hidden_folder_path):
+        # Удаляем папку вместе с содержимым
+        shutil.rmtree(hidden_folder_path)
+
+    # Создаем папку
+    os.makedirs(hidden_folder_path)
+
+    # Для Windows устанавливаем атрибут 'hidden'
+    if platform.system() == 'Windows':
+        subprocess.call(['attrib', '+H', hidden_folder_path])
+
+    print(f"Создана скрытая папка: {hidden_folder_path}")
+    return hidden_folder_path
+
 
 def check_memory():
     memory = psutil.virtual_memory()
@@ -36,6 +60,8 @@ def get_pwm_color(pwm):
         return 'white'
 
 def create_speed_video(csv_file, output_path):
+
+    hidden_folder = create_or_clean_hidden_folder()
 
     # Определение путей к шрифтам
     font_regular_path = os.path.join(os.path.dirname(__file__), 'fonts', 'sf-ui-display-regular.otf')
@@ -190,10 +216,11 @@ def create_speed_video(csv_file, output_path):
                 print(f"Обработано {total_processed}/{len(data)} записей...")
 
         # Сохранение временного видеофайла для текущей части
-        temp_output_path = f"{output_path}_part_{start//chunk_size}.mp4"
+        temp_output_path = os.path.join(hidden_folder, f"{output_file_name}_part_{start//chunk_size}.mp4")
         concatenate_videoclips(clips, method="compose").write_videofile(temp_output_path, fps=5, bitrate="20000k")
         temp_video_files.append(temp_output_path)
         print(f"Временный видеофайл {temp_output_path} создан.")
+        # print(f"output_path: {output_path}") #для отладки
         # Очистка памяти после обработки и сохранения каждого чанка
         gc.collect()
 
@@ -212,7 +239,9 @@ def create_speed_video(csv_file, output_path):
     for file in temp_video_files:
         os.remove(file)
         print(f"Временный файл {file} удален.")
-
+    # Удаление самой скрытой папки
+    shutil.rmtree(hidden_folder)
+    print(f"Скрытая папка {hidden_folder} удалена.")
 
 
 def create_graph(data, current_time, duration):
@@ -272,13 +301,13 @@ def create_graph(data, current_time, duration):
 
 
 if __name__ == "__main__":
-    print("Эта программа создаёт видео телеметрии (в 4K разрешении) из данных CSV файла программы darknessbot и WheelLog.")
+    print("Эта программа создаёт видео телеметрии (в 4K разрешении) из данных CSV файла программы DarknessBot или WheelLog.")
 
     csv_file = ""
     while not csv_file.strip():
         csv_file = input("Пожалуйста, введите путь к вашему CSV файлу: ")
         if not csv_file.strip():
-            print("Вы забыли указать путь к CSV файлу. Пожалуйста, попробуйте снова.")
+            print("Вы забыли указать путь к CSV файлу! Пожалуйста, будьте внимательнее и попробуйте снова.")
 
     output_path = input("Введите директорию для сохранения видео (можете не вводить ничего, видео сохранится в директирию к csv файлу): ").strip()
 
@@ -286,7 +315,11 @@ if __name__ == "__main__":
     if not output_path:
         base_dir = os.path.dirname(csv_file)
         timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-        output_path = os.path.join(base_dir, f"dark{timestamp}.mp4")
+        output_file_name = f"rednessbot{timestamp}.mp4"
+        output_path = os.path.join(base_dir, output_file_name)
+    else:
+        base_dir, output_file_name = os.path.split(output_path)
+
 
     create_speed_video(csv_file, output_path)
 
