@@ -8,8 +8,22 @@ import psutil  # гребаная память кудато утекает и в
 import subprocess
 import shutil
 import platform
+import tkinter as tk
+from tkinter import filedialog, scrolledtext
+import threading
+import sys
+import logging
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
+# Настройка логирования
+logging.basicConfig(filename='app.log', filemode='w', format='%(name)s - %(levelname)s - %(message)s')
+
+
 
 def create_or_clean_hidden_folder():
+    logging.info("Начало выполнения функции create_speed_video")
     # Определение пути к скрытой папке в той же директории, что и скрипт
     script_dir = os.path.dirname(os.path.abspath(__file__))
     hidden_folder_path = os.path.join(script_dir, '.redness_temp_files')
@@ -60,8 +74,17 @@ def get_pwm_color(pwm):
         return 'white'
 
 def create_speed_video(csv_file, output_path):
-
+    print("Начало выполнения функции create_speed_video")
     hidden_folder = create_or_clean_hidden_folder()
+
+    # Определение имени файла для сохранения видео
+    if not output_path:
+        base_dir = os.path.dirname(csv_file)
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        output_file_name = f"rednessbot{timestamp}.mp4"
+        output_path = os.path.join(base_dir, output_file_name)
+    else:
+        base_dir, output_file_name = os.path.split(output_path)
 
     # Определение путей к шрифтам
     font_regular_path = os.path.join(os.path.dirname(__file__), 'fonts', 'sf-ui-display-regular.otf')
@@ -109,6 +132,7 @@ def create_speed_video(csv_file, output_path):
     for start in range(0, len(data), chunk_size):
         end = min(start + chunk_size, len(data))
         chunk_data = data[start:end]
+        print(f"Обработка чанка данных с {start} по {start + chunk_size}")
 
         if not check_memory():
             print(f"Прерывание обработки на чанке {start}, недостаточно памяти.")
@@ -230,7 +254,7 @@ def create_speed_video(csv_file, output_path):
 
     if check_memory():
         final_clip = concatenate_videoclips(final_clips, method="compose")
-        final_clip.write_videofile(output_path, fps=5, bitrate="20000k")
+        final_clip.write_videofile(output_path, fps=5, codec='libx264', bitrate="20000k")
         print(f"Финальное видео сохранено в {output_path}")
     else:
         print("Прерывание создания финального видео, недостаточно памяти.")
@@ -242,7 +266,10 @@ def create_speed_video(csv_file, output_path):
     # Удаление самой скрытой папки
     shutil.rmtree(hidden_folder)
     print(f"Скрытая папка {hidden_folder} удалена.")
+    on_thread_complete()
+    print("Окончание выполнения функции create_speed_video")
 
+    logging.info("Функция create_speed_video завершила выполнение")
 
 def create_graph(data, current_time, duration):
     # Фильтрация данных за последние 30 секунд
@@ -298,28 +325,101 @@ def create_graph(data, current_time, duration):
     return graph_clip
 
 
+def redirect_to_textbox(textbox):
+    class TextRedirector(object):
+        def __init__(self, widget):
+            self.widget = widget
+            self.terminal = sys.stdout  # Сохраняем оригинальный stdout
+
+        def write(self, str):
+            self.widget.insert(tk.END, str)  # Вставляем строку в виджет текстовой коробки
+            self.widget.see(tk.END)  # Прокрутка к последней строке
+            self.terminal.write(str)  # Печатаем строку в оригинальный stdout
+
+        def flush(self):
+            pass
+
+    sys.stdout = TextRedirector(textbox)
 
 
-if __name__ == "__main__":
-    print("Эта программа создаёт видео телеметрии (в 4K разрешении) из данных CSV файла программы DarknessBot или WheelLog.")
+def choose_csv_file():
+    filepath = filedialog.askopenfilename(filetypes=[("CSV Files", "*.csv")])
+    csv_file_path.set(filepath)
+    csv_file_entry.delete(0, tk.END)
+    csv_file_entry.insert(0, filepath)
 
-    csv_file = ""
-    while not csv_file.strip():
-        csv_file = input("Пожалуйста, введите путь к вашему CSV файлу: ")
-        if not csv_file.strip():
-            print("Вы забыли указать путь к CSV файлу! Пожалуйста, будьте внимательнее и попробуйте снова.")
+def choose_output_directory():
+    directory = filedialog.askdirectory()
+    output_dir_path.set(directory)
+    output_dir_entry.delete(0, tk.END)
+    output_dir_entry.insert(0, directory)
 
-    output_path = input("Введите директорию для сохранения видео (можете не вводить ничего, видео сохранится в директирию к csv файлу): ").strip()
 
-    # Если директория для сохранения не указана, формируем имя файла в текущей директории CSV файла
-    if not output_path:
+def start_processing():
+    csv_file = csv_file_path.get()
+    output_path = determine_output_path(csv_file, output_dir_path.get())
+
+    # Запуск тяжелых вычислений в отдельном потоке
+    processing_thread = threading.Thread(target=create_speed_video, args=(csv_file, output_path))
+    processing_thread.start()
+
+    # Ожидание завершения потока и обновление интерфейса
+    app.after(100, lambda: check_thread(processing_thread))
+
+
+def determine_output_path(csv_file, output_dir):
+    if not output_dir:
         base_dir = os.path.dirname(csv_file)
         timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
         output_file_name = f"rednessbot{timestamp}.mp4"
-        output_path = os.path.join(base_dir, output_file_name)
+        return os.path.join(base_dir, output_file_name)
     else:
-        base_dir, output_file_name = os.path.split(output_path)
+        # Проверяем, указано ли имя файла в output_dir
+        if os.path.splitext(output_dir)[1] == "":
+            timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+            output_file_name = f"rednessbot{timestamp}.mp4"
+            return os.path.join(output_dir, output_file_name)
+        else:
+            return output_dir
+
+def check_thread(thread):
+    if thread.is_alive():
+        app.after(100, lambda: check_thread(thread))
+        app.update()  # Обновление GUI
+    else:
+        on_thread_complete()
 
 
-    create_speed_video(csv_file, output_path)
+def on_thread_complete():
+    print("Обработка завершена.")
+    # Здесь можно добавить код для обновления GUI или уведомления пользователя
 
+if __name__ == "__main__":
+    app = tk.Tk()
+    app.title("RednessBot 1.0")
+
+    description_label = tk.Label(app, text="Приложение накладывает телеметрию на ваше видео из файла экспорта DarknessBot и WheelLog, отображая скорость, остальные параметры и график скорость/ШИМ.", wraplength=400)
+    description_label.pack()
+
+    csv_file_path = tk.StringVar()
+    choose_csv_button = tk.Button(app, text="Выбрать CSV файл DarknessBot или WheelLog", command=choose_csv_file)
+    choose_csv_button.pack()
+    csv_file_entry = tk.Entry(app, textvariable=csv_file_path, width=50)
+    csv_file_entry.pack()
+
+    output_dir_path = tk.StringVar()
+    choose_output_dir_button = tk.Button(app, text="Выбрать директорию для сохранения видео", command=choose_output_directory)
+    choose_output_dir_button.pack()
+    output_dir_entry = tk.Entry(app, textvariable=output_dir_path, width=50)
+    output_dir_entry.pack()
+
+    start_button = tk.Button(app, text="Начать процесс", command=start_processing)
+    start_button.pack()
+
+    console_log = scrolledtext.ScrolledText(app, height=10)
+    console_log.pack()
+
+    redirect_to_textbox(console_log)
+
+
+    app.mainloop()
