@@ -16,6 +16,7 @@ import logging
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from tkinter import ttk
 
 # Настройка логирования
 logging.basicConfig(filename='app.log', filemode='w', format='%(name)s - %(levelname)s - %(message)s')
@@ -73,6 +74,11 @@ def get_pwm_color(pwm):
     else:
         return 'white'
 
+def update_progress_bar(progress):
+    progress_bar["value"] = progress
+    app.update_idletasks()  # Обновление GUI
+
+
 def create_speed_video(csv_file, output_path):
     print("Начало выполнения функции create_speed_video")
     hidden_folder = create_or_clean_hidden_folder()
@@ -125,7 +131,7 @@ def create_speed_video(csv_file, output_path):
     initial_mileage = data.iloc[0]['Total mileage']
 
     # Определяем размер части данных для обработки
-    chunk_size = 250
+    chunk_size = 50
     temp_video_files = []
 
     # Обрабатываем данные частями
@@ -236,8 +242,10 @@ def create_speed_video(csv_file, output_path):
             clips.append(video_clip)
 
             total_processed += 1
-            if total_processed % 100 == 0:
+            if total_processed % 10 == 0:  # Изменено с 100 на 10
                 print(f"Обработано {total_processed}/{len(data)} записей...")
+                progress = (total_processed / len(data)) * 100  # Вычисление прогресса
+                app.after(0, lambda: update_progress_bar(progress))  # Обновление прогресс-бара 
 
         # Сохранение временного видеофайла для текущей части
         temp_output_path = os.path.join(hidden_folder, f"{output_file_name}_part_{start//chunk_size}.mp4")
@@ -267,6 +275,7 @@ def create_speed_video(csv_file, output_path):
     shutil.rmtree(hidden_folder)
     print(f"Скрытая папка {hidden_folder} удалена.")
     on_thread_complete()
+    progress_bar["value"] = 0    
     print("Окончание выполнения функции create_speed_video")
 
     logging.info("Функция create_speed_video завершила выполнение")
@@ -325,28 +334,46 @@ def create_graph(data, current_time, duration):
     return graph_clip
 
 
+class TextRedirector(object):
+    def __init__(self, widget, stdout, stderr, max_lines=50):
+        self.widget = widget
+        self.stdout = stdout
+        self.stderr = stderr
+        self.max_lines = max_lines
+
+    def write(self, message):
+        self.widget.insert(tk.END, message)
+        self.widget.see(tk.END)
+        
+        # Удаление старых строк, если превышен лимит
+        lines = self.widget.get(1.0, tk.END).split('\n')
+        if len(lines) > self.max_lines:
+            self.widget.delete(1.0, 2.0)
+
+        # Печатаем в stdout или stderr в зависимости от типа сообщения
+        if 'Traceback' in message or 'Error' in message:
+            self.stderr.write(message)
+        else:
+            self.stdout.write(message)
+
+    def flush(self):
+        pass
+
 def redirect_to_textbox(textbox):
-    class TextRedirector(object):
-        def __init__(self, widget):
-            self.widget = widget
-            self.terminal = sys.stdout  # Сохраняем оригинальный stdout
+    sys.stdout = TextRedirector(textbox, sys.stdout, sys.stderr)
+    sys.stderr = sys.stdout  # Перенаправляем stderr в тот же объект, что и stdout
 
-        def write(self, str):
-            self.widget.insert(tk.END, str)  # Вставляем строку в виджет текстовой коробки
-            self.widget.see(tk.END)  # Прокрутка к последней строке
-            self.terminal.write(str)  # Печатаем строку в оригинальный stdout
-
-        def flush(self):
-            pass
-
-    sys.stdout = TextRedirector(textbox)
 
 
 def choose_csv_file():
     filepath = filedialog.askopenfilename(filetypes=[("CSV Files", "*.csv")])
-    csv_file_path.set(filepath)
-    csv_file_entry.delete(0, tk.END)
-    csv_file_entry.insert(0, filepath)
+    if filepath:  # Проверяем, был ли выбран файл
+        csv_file_path.set(filepath)
+        csv_file_entry.delete(0, tk.END)
+        csv_file_entry.insert(0, filepath)
+        start_button.config(state=tk.NORMAL)  # Активируем кнопку "Начать процесс"
+    else:
+        start_button.config(state=tk.DISABLED)  # Деактивируем кнопку, если файл не выбран
 
 def choose_output_directory():
     directory = filedialog.askdirectory()
@@ -362,6 +389,11 @@ def start_processing():
     # Запуск тяжелых вычислений в отдельном потоке
     processing_thread = threading.Thread(target=create_speed_video, args=(csv_file, output_path))
     processing_thread.start()
+
+    # Деактивация кнопок
+    choose_csv_button.config(state=tk.DISABLED)
+    choose_output_dir_button.config(state=tk.DISABLED)
+    start_button.config(state=tk.DISABLED)
 
     # Ожидание завершения потока и обновление интерфейса
     app.after(100, lambda: check_thread(processing_thread))
@@ -385,39 +417,60 @@ def determine_output_path(csv_file, output_dir):
 def check_thread(thread):
     if thread.is_alive():
         app.after(100, lambda: check_thread(thread))
-        app.update()  # Обновление GUI
     else:
         on_thread_complete()
 
 
+
 def on_thread_complete():
     print("Обработка завершена.")
+    # Активация кнопок
+    choose_csv_button.config(state=tk.NORMAL)
+    choose_output_dir_button.config(state=tk.NORMAL)
+    start_button.config(state=tk.NORMAL)
     # Здесь можно добавить код для обновления GUI или уведомления пользователя
 
 if __name__ == "__main__":
     app = tk.Tk()
-    app.title("RednessBot 1.0")
+    app.title("RednessBot 1.1")
+
+    # Установка начального размера окна
+    current_width = 800  # Пример текущей ширины
+    current_height = 450  # Пример текущей высоты
+    new_width = int(current_width * 0.5)  # Уменьшение ширины на 30%
+    
+    app.geometry(f"{new_width}x{current_height}")  # Установка нового размера окна
+    app.resizable(False, True)  # Запрет изменения размера окна
 
     description_label = tk.Label(app, text="Приложение накладывает телеметрию на ваше видео из файла экспорта DarknessBot и WheelLog, отображая скорость, остальные параметры и график скорость/ШИМ.", wraplength=400)
-    description_label.pack()
+    description_label.pack(pady=(20, 0))  # 10 пикселей отступа сверху, 0 пикселей снизу
 
     csv_file_path = tk.StringVar()
     choose_csv_button = tk.Button(app, text="Выбрать CSV файл DarknessBot или WheelLog", command=choose_csv_file)
-    choose_csv_button.pack()
+    choose_csv_button.pack(pady=(20, 0))  # 10 пикселей отступа сверху, 0 пикселей снизу
     csv_file_entry = tk.Entry(app, textvariable=csv_file_path, width=50)
     csv_file_entry.pack()
 
     output_dir_path = tk.StringVar()
     choose_output_dir_button = tk.Button(app, text="Выбрать директорию для сохранения видео", command=choose_output_directory)
-    choose_output_dir_button.pack()
+    choose_output_dir_button.pack(pady=(10, 0))  # 10 пикселей отступа сверху, 0 пикселей снизу
     output_dir_entry = tk.Entry(app, textvariable=output_dir_path, width=50)
     output_dir_entry.pack()
 
-    start_button = tk.Button(app, text="Начать процесс", command=start_processing)
-    start_button.pack()
+    # Создаем фрейм для размещения кнопки
+    button_frame = tk.Frame(app, width=200, height=50)  # Задаем размеры в пикселях
+    button_frame.pack_propagate(False)  # Отключаем автоматическое изменение размера
+    button_frame.pack(pady=(20, 0))  # 10 пикселей отступа сверху, 0 пикселей снизу
+
+    # Создаем кнопку внутри фрейма
+    start_button = tk.Button(button_frame, text="Начать процесс", command=start_processing, state=tk.DISABLED)  # Изначально кнопка неактивна
+    start_button.pack(fill=tk.BOTH, expand=True)  # Заполняем весь фрейм
+
+    progress_bar = ttk.Progressbar(app, orient="horizontal", length=350, mode="determinate")
+    progress_bar.pack(pady=(20, 0))  # 10 пикселей отступа сверху, 0 пикселей снизу
 
     console_log = scrolledtext.ScrolledText(app, height=10)
-    console_log.pack()
+    console_log.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=True, pady=(20, 0))
 
     redirect_to_textbox(console_log)
 
