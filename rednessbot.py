@@ -1,22 +1,25 @@
 import os
-import pandas as pd
-import matplotlib.pyplot as plt
-from moviepy.editor import ColorClip, TextClip, CompositeVideoClip, concatenate_videoclips, VideoFileClip, ImageClip
-import datetime
-import gc
-import psutil  # гребаная память кудато утекает и всё крашится, сделаем проверку памяти
+import sys
 import subprocess
 import shutil
 import platform
-import tkinter as tk
-from tkinter import filedialog, scrolledtext
+import datetime
 import threading
-import sys
 import logging
+import gc
+import pandas as pd
 import matplotlib
-matplotlib.use('Agg')
+matplotlib.use('Agg')  # Это должно быть перед импортом pyplot
 import matplotlib.pyplot as plt
-from tkinter import ttk
+from moviepy.editor import ColorClip, TextClip, CompositeVideoClip, concatenate_videoclips, VideoFileClip, ImageClip
+import psutil
+import tkinter as tk
+from tkinter import filedialog, scrolledtext, ttk
+import tkinter.messagebox
+import customtkinter as ctk
+import customtkinter
+
+
 
 # Настройка логирования
 logging.basicConfig(filename='app.log', filemode='w', format='%(name)s - %(levelname)s - %(message)s')
@@ -75,8 +78,9 @@ def get_pwm_color(pwm):
         return 'white'
 
 def update_progress_bar(progress):
-    progress_bar["value"] = progress
-    app.update_idletasks()  # Обновление GUI
+    # Преобразование процента выполнения в значение от 0 до 1
+    progress_value = progress / 100.0
+    progress_bar.set(progress_value)  # Обновление customtkinter прогресс-бара
 
 
 def create_speed_video(csv_file, output_path):
@@ -245,7 +249,7 @@ def create_speed_video(csv_file, output_path):
             if total_processed % 10 == 0:  # Изменено с 100 на 10
                 print(f"Обработано {total_processed}/{len(data)} записей...")
                 progress = (total_processed / len(data)) * 100  # Вычисление прогресса
-                app.after(0, lambda: update_progress_bar(progress))  # Обновление прогресс-бара 
+                update_progress_bar(progress) # Обновление прогресс-бара 
 
         # Сохранение временного видеофайла для текущей части
         temp_output_path = os.path.join(hidden_folder, f"{output_file_name}_part_{start//chunk_size}.mp4")
@@ -367,13 +371,14 @@ def redirect_to_textbox(textbox):
 
 def choose_csv_file():
     filepath = filedialog.askopenfilename(filetypes=[("CSV Files", "*.csv")])
-    if filepath:  # Проверяем, был ли выбран файл
+    if filepath:
         csv_file_path.set(filepath)
         csv_file_entry.delete(0, tk.END)
         csv_file_entry.insert(0, filepath)
-        start_button.config(state=tk.NORMAL)  # Активируем кнопку "Начать процесс"
+        start_button.configure(state=ctk.NORMAL) 
     else:
-        start_button.config(state=tk.DISABLED)  # Деактивируем кнопку, если файл не выбран
+        start_button.configure(state=ctk.DISABLED)  
+
 
 def choose_output_directory():
     directory = filedialog.askdirectory()
@@ -391,9 +396,9 @@ def start_processing():
     processing_thread.start()
 
     # Деактивация кнопок
-    choose_csv_button.config(state=tk.DISABLED)
-    choose_output_dir_button.config(state=tk.DISABLED)
-    start_button.config(state=tk.DISABLED)
+    choose_csv_button.configure(state=ctk.DISABLED)
+    choose_output_dir_button.configure(state=ctk.DISABLED)
+    start_button.configure(state=ctk.DISABLED)
 
     # Ожидание завершения потока и обновление интерфейса
     app.after(100, lambda: check_thread(processing_thread))
@@ -425,54 +430,59 @@ def check_thread(thread):
 def on_thread_complete():
     print("Обработка завершена.")
     # Активация кнопок
-    choose_csv_button.config(state=tk.NORMAL)
-    choose_output_dir_button.config(state=tk.NORMAL)
-    start_button.config(state=tk.NORMAL)
+    choose_csv_button.configure(state=ctk.NORMAL)
+    choose_output_dir_button.configure(state=ctk.NORMAL)
+    start_button.configure(state=ctk.NORMAL)
     # Здесь можно добавить код для обновления GUI или уведомления пользователя
 
+
+
 if __name__ == "__main__":
-    app = tk.Tk()
+    app = ctk.CTk()
     app.title("RednessBot 1.1")
 
-    # Установка начального размера окна
-    current_width = 800  # Пример текущей ширины
-    current_height = 450  # Пример текущей высоты
-    new_width = int(current_width * 0.5)  # Уменьшение ширины на 30%
-    
-    app.geometry(f"{new_width}x{current_height}")  # Установка нового размера окна
-    app.resizable(False, True)  # Запрет изменения размера окна
+    # Установка размера окна и прочие настройки
+    app.wm_minsize(0, 450)
+    current_width = 800
+    current_height = 500
+    new_width = int(current_width * 0.5)
+    app.geometry(f"{new_width}x{current_height}")
+    app.resizable(False, True)
 
-    description_label = tk.Label(app, text="Приложение накладывает телеметрию на ваше видео из файла экспорта DarknessBot и WheelLog, отображая скорость, остальные параметры и график скорость/ШИМ.", wraplength=400)
-    description_label.pack(pady=(20, 0))  # 10 пикселей отступа сверху, 0 пикселей снизу
+
+    # Создание виджетов с использованием customtkinter
+    description_label = ctk.CTkLabel(app, text="Приложение накладывает телеметрию на ваше видео из файла экспорта DarknessBot и WheelLog, отображая скорость, остальные параметры и график скорость/ШИМ.", wraplength=300)
+    description_label.pack(pady=(20, 0))
 
     csv_file_path = tk.StringVar()
-    choose_csv_button = tk.Button(app, text="Выбрать CSV файл DarknessBot или WheelLog", command=choose_csv_file)
-    choose_csv_button.pack(pady=(20, 0))  # 10 пикселей отступа сверху, 0 пикселей снизу
-    csv_file_entry = tk.Entry(app, textvariable=csv_file_path, width=50)
-    csv_file_entry.pack()
+    choose_csv_button = ctk.CTkButton(app, text="Выбрать CSV файл DarknessBot или WheelLog", command=choose_csv_file)
+    choose_csv_button.pack(pady=(20, 0))
+
+    csv_file_entry = ctk.CTkEntry(app, textvariable=csv_file_path, width=300)
+    csv_file_entry.pack(pady=(20, 0))
 
     output_dir_path = tk.StringVar()
-    choose_output_dir_button = tk.Button(app, text="Выбрать директорию для сохранения видео", command=choose_output_directory)
-    choose_output_dir_button.pack(pady=(10, 0))  # 10 пикселей отступа сверху, 0 пикселей снизу
-    output_dir_entry = tk.Entry(app, textvariable=output_dir_path, width=50)
-    output_dir_entry.pack()
+    choose_output_dir_button = ctk.CTkButton(app, text="Выбрать директорию для сохранения видео", command=choose_output_directory)
+    choose_output_dir_button.pack(pady=(20, 0))
 
-    # Создаем фрейм для размещения кнопки
-    button_frame = tk.Frame(app, width=200, height=50)  # Задаем размеры в пикселях
-    button_frame.pack_propagate(False)  # Отключаем автоматическое изменение размера
-    button_frame.pack(pady=(20, 0))  # 10 пикселей отступа сверху, 0 пикселей снизу
+    output_dir_entry = ctk.CTkEntry(app, textvariable=output_dir_path, width=300)
+    output_dir_entry.pack(pady=(20, 0))
 
-    # Создаем кнопку внутри фрейма
-    start_button = tk.Button(button_frame, text="Начать процесс", command=start_processing, state=tk.DISABLED)  # Изначально кнопка неактивна
-    start_button.pack(fill=tk.BOTH, expand=True)  # Заполняем весь фрейм
+    button_frame = ctk.CTkFrame(app, width=200, height=50)
+    button_frame.pack_propagate(False)
+    button_frame.pack(pady=(30, 0))
 
-    progress_bar = ttk.Progressbar(app, orient="horizontal", length=350, mode="determinate")
-    progress_bar.pack(pady=(20, 0))  # 10 пикселей отступа сверху, 0 пикселей снизу
+    start_button = ctk.CTkButton(button_frame, text="Начать процесс", command=start_processing, state='disabled')
+    start_button.pack(fill='both', expand=True)
+ 
+    progress_bar = ctk.CTkProgressBar(master=app, width=300)
+    progress_bar.set(0)
+    progress_bar.pack(pady=20, padx=20, )
 
-    console_log = scrolledtext.ScrolledText(app, height=10)
+
+    console_log = customtkinter.CTkTextbox(app, height=10)
     console_log.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=True, pady=(20, 0))
 
     redirect_to_textbox(console_log)
-
 
     app.mainloop()
