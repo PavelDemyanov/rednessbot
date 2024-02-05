@@ -21,8 +21,9 @@
 1. Откройте браузер и перейдите на официальный сайт [Python](python.org)
 2. Уставновите Python. В окне установки обязательно поставьте галочку напротив пункта `Add Python to PATH`.
 3. Запустите консоль в MAC/Windows
-4. Установите необходимые библиотеки: `pip install pandas matplotlib moviepy psutil`.
-5. Убедитесь, что Python установлен в вашей системе. `datetime` и `gc` уже включены в стандартную библиотеку Python, поэтому дополнительных действий для их установки не требуется.
+4. Установите ffmpeg `sudo dnf install ffmpeg` (unix) и ImageMagick `sudo apt-get install libmagickwand-dev` (unix) или Homebrew `/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)`(mac) `brew install imagemagick` (mac) `brew install ffmpeg`(mac)
+5. Установите необходимые библиотеки: `pip install pandas matplotlib moviepy psutil`.
+6. Убедитесь, что Python установлен в вашей системе. `datetime` и `gc` уже включены в стандартную библиотеку Python, поэтому дополнительных действий для их установки не требуется.
 7. Запустите скрипт через ту же консоль `python /ВАША-ДИРЕКТОРИЯ/rednessbot.py`
 8. Указываем программе директорию, откуда брать CSV, и директория, куда сохранить видеофайл (можно не указывать ничего, если не указано, программа сохранит видео в директорию, где лежит CSV).
 
