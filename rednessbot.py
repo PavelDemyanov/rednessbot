@@ -18,6 +18,23 @@ from tkinter import filedialog, scrolledtext, ttk
 import tkinter.messagebox
 import customtkinter as ctk
 import customtkinter
+from PIL import Image
+
+# Определение пути к приложению
+if getattr(sys, 'frozen', False):
+    # Если приложение запущено как собранный исполняемый файл
+    application_path = sys._MEIPASS
+else:
+    # Если приложение запущено как скрипт (.py)
+    application_path = os.path.dirname(os.path.abspath(__file__))
+
+# Установка переменных окружения для ffmpeg и ImageMagick
+os.environ["IMAGEIO_FFMPEG_EXE"] = os.path.join(application_path, 'ffmpeg')
+os.environ["IMAGEMAGICK_BINARY"] = os.path.join(application_path, 'magick')
+
+# Логирование путей
+logging.info("Путь к ffmpeg: " + os.environ["IMAGEIO_FFMPEG_EXE"])
+logging.info("Путь к ImageMagick: " + os.environ["IMAGEMAGICK_BINARY"])
 
 
 
@@ -28,31 +45,27 @@ logging.basicConfig(filename='app.log', filemode='w', format='%(name)s - %(level
 
 def create_or_clean_hidden_folder():
     logging.info("Начало выполнения функции create_speed_video")
-    # Определение пути к скрытой папке в той же директории, что и скрипт
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    hidden_folder_path = os.path.join(script_dir, '.redness_temp_files')
+    # Определение пути к папке в домашнем каталоге пользователя
+    home_dir = os.path.expanduser('~')
+    temp_folder_path = os.path.join(home_dir, 'redness_temp_files')
 
     # Проверяем, существует ли папка
-    if os.path.exists(hidden_folder_path):
+    if os.path.exists(temp_folder_path):
         # Удаляем папку вместе с содержимым
-        shutil.rmtree(hidden_folder_path)
+        shutil.rmtree(temp_folder_path)
 
     # Создаем папку
-    os.makedirs(hidden_folder_path)
+    os.makedirs(temp_folder_path)
 
-    # Для Windows устанавливаем атрибут 'hidden'
-    if platform.system() == 'Windows':
-        subprocess.call(['attrib', '+H', hidden_folder_path])
-
-    print(f"Создана скрытая папка: {hidden_folder_path}")
-    return hidden_folder_path
+    print(f"Создана папка временных файлов: {temp_folder_path}")
+    return temp_folder_path
 
 
 def check_memory():
     memory = psutil.virtual_memory()
     available_memory = int(memory.available / (1024 * 1024))  # В мегабайтах, округлено до целого числа
     print(f"Доступная память: {available_memory} MB")
-    if available_memory < 8 * 1024:  # Порог в 8 ГБ
+    if available_memory < 4 * 1024:  # Порог в 4 ГБ
         print("Предупреждение: низкий уровень доступной памяти!")
         return False
     return True
@@ -339,26 +352,54 @@ def create_graph(data, current_time, duration):
 
 
 class TextRedirector(object):
-    def __init__(self, widget, stdout, stderr, max_lines=50):
+    def __init__(self, widget, stdout, stderr, max_lines=10):
         self.widget = widget
         self.stdout = stdout
         self.stderr = stderr
         self.max_lines = max_lines
 
     def write(self, message):
-        self.widget.insert(tk.END, message)
-        self.widget.see(tk.END)
-        
-        # Удаление старых строк, если превышен лимит
-        lines = self.widget.get(1.0, tk.END).split('\n')
-        if len(lines) > self.max_lines:
-            self.widget.delete(1.0, 2.0)
+        # Список ключевых фраз для фильтрации сообщений
+        key_phrases = [
+            "Начало выполнения функции",
+            "Создана скрытая",
+            "Обработка",
+            "Доступная память",
+            "Обработано",
+            "Building video",
+            "Writing video",
+            "Done",
+            "video ready",
+            "Временный",
+            "видео",
+            "Временный файл",
+            "Скрытая папка",
+            "Error",
+            "недостаточно",
+            "Неверный формат",
+
+        ]
+
+        # Проверяем, содержит ли сообщение одну из ключевых фраз
+        if any(phrase in message for phrase in key_phrases):
+            formatted_message = message + "\n"  # Добавляем символ новой строки к сообщению
+            self.widget.insert(tk.END, formatted_message)
+            self.widget.see(tk.END)
+        else:
+            return  # Пропускаем сообщение, если оно не содержит ключевых фраз
 
         # Печатаем в stdout или stderr в зависимости от типа сообщения
         if 'Traceback' in message or 'Error' in message:
-            self.stderr.write(message)
+            self.stderr.write(message + "\n")  # Также добавляем новую строку для ошибок
         else:
-            self.stdout.write(message)
+            self.stdout.write(message + "\n")
+
+        # Удаление старых строк, чтобы сохранить ограничение в 50 строк
+        lines = self.widget.get(1.0, tk.END).split('\n')
+        while len(lines) > 101:  # (100 строк + 1 пустая строка)
+            self.widget.delete(1.0, 2.0)
+            lines = self.widget.get(1.0, tk.END).split('\n')
+
 
     def flush(self):
         pass
@@ -426,9 +467,8 @@ def check_thread(thread):
         on_thread_complete()
 
 
-
 def on_thread_complete():
-    print("Обработка завершена.")
+    print("Обработка завершена успешно!")
     # Активация кнопок
     choose_csv_button.configure(state=ctk.NORMAL)
     choose_output_dir_button.configure(state=ctk.NORMAL)
@@ -439,16 +479,16 @@ def on_thread_complete():
 
 if __name__ == "__main__":
     app = ctk.CTk()
-    app.title("RednessBot 1.1")
+    app.title("RednessBot 1.15")
 
     # Установка размера окна и прочие настройки
-    app.wm_minsize(0, 450)
-    current_width = 800
-    current_height = 500
-    new_width = int(current_width * 0.5)
+    app.wm_minsize(350, 550)
+    app.wm_maxsize(350, app.winfo_screenheight())
+    current_width = 350
+    current_height = 550
+    new_width = int(current_width)
     app.geometry(f"{new_width}x{current_height}")
-    app.resizable(False, True)
-
+    app.resizable(True, True)
 
     # Создание виджетов с использованием customtkinter
     description_label = ctk.CTkLabel(app, text="Приложение накладывает телеметрию на ваше видео из файла экспорта DarknessBot и WheelLog, отображая скорость, остальные параметры и график скорость/ШИМ.", wraplength=300)
@@ -481,7 +521,7 @@ if __name__ == "__main__":
 
 
     console_log = customtkinter.CTkTextbox(app, height=10)
-    console_log.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=True, pady=(20, 0))
+    console_log.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=True, pady=(20, 20),padx=(20, 20))
 
     redirect_to_textbox(console_log)
 
